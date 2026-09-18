@@ -1,8 +1,8 @@
-# Allocation Lab
+# Portfolio Allocation Engine
 
 Multi-asset portfolio construction, walk-forward tested across 23 years and 40 allocation methods.
 
-**Live dashboard:** https://allocation-lab.streamlit.app
+**Live dashboard (Allocation Lab):** https://allocation-lab.streamlit.app
 
 ![Single run view](docs/img/single_run.png)
 
