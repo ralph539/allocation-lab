@@ -6,19 +6,19 @@ Multi-asset portfolio construction, walk-forward tested across 23 years and 40 a
 
 ![Single run view](docs/img/single_run.png)
 
-A risk-profiled allocation engine for a 14-sleeve ETF universe, with a research lab that puts every optimiser through the same walk-forward protocol and asks one question: does it earn its complexity against a passive 60/40? The answer is measured, not assumed. Where the engine adds value, the numbers say so; where it does not, they say that too.
+A risk-profiled allocation engine for a 14-sleeve ETF universe, and a research lab that runs every optimiser through the same walk-forward protocol and compares it to a passive 60/40 over 23 years.
 
 ## What is here
 
 - An allocation engine. Four risk tiers, each a strategic weight ladder with hard concentration caps, solved monthly by a mean-CVaR linear program and its dual (maximum return under a tail-risk budget).
-- A walk-forward backtester. One pass, never re-fitted, with transaction costs and tolerance-band rebalancing. Sub-periods and crisis windows are cut from the single out-of-sample curve after the fact, so the engine never knew a boundary existed.
-- A research lab. 40 methods on three universes: the ETF book on its actual instruments (2022 to 2026), and two long-history reconstructions that reach back to 2003 so the engine can be judged through the 2008 crisis, the 2011 euro crisis, the 2022 rate shock and every calendar block in between.
-- Honest scoring. Every configuration is counted as a trial and the best Sharpe is deflated for the number of tries. A run's drawdown is compared against a passive book at the same exposure, not against 100 percent buy-and-hold.
-- A dashboard. Every run, window, holding and trade is browsable, with the same numbers the tables below are built from.
+- A walk-forward backtester. One pass, never re-fitted, with transaction costs and tolerance-band rebalancing. Sub-periods and crisis windows are cut from the single out-of-sample curve afterwards, so no sub-period result is fitted.
+- A research lab. 40 methods on three universes: the ETF book on its actual instruments (2022 to 2026), and two long-history reconstructions back to 2003 that cover the 2008 crisis, the 2011 euro crisis, the 2022 rate shock and five calendar blocks.
+- Scoring. Every configuration is counted as a trial and the best Sharpe is deflated for the number of tries. Drawdowns are compared against a passive book at the same exposure rather than against 100 percent buy-and-hold.
+- A dashboard. Every run, window, holding and trade is browsable. The tables below are built from the same store.
 
 ## Live dashboard
 
-The dashboard reads a precomputed store, so it opens instantly and every control recomputes on the fly.
+The dashboard reads a precomputed store; every control recomputes from it.
 
 | Control | What it changes |
 | --- | --- |
@@ -36,15 +36,15 @@ Four views: **Single run** (metrics, growth and drawdown chart, allocation, P&L 
 
 ![Findings](docs/img/findings.png)
 
-**The engine adds value where it constrains, and gives it back where the constraints loosen.** On the conservative tier, mean-CVaR reaches a Sharpe of 0.83 against 0.62 for the 60/40 benchmark, with a maximum drawdown of -14 percent against -36 percent and a Jensen alpha of +1.8 percent a year. Alpha then falls monotonically through the tiers and turns negative on the growth and aggressive profiles.
+**Risk-adjusted value concentrates in the low-risk tiers.** On the conservative tier, mean-CVaR reaches a Sharpe of 0.83 against 0.62 for the 60/40 benchmark, with a maximum drawdown of -14 percent against -36 percent and a Jensen alpha of +1.8 percent a year. Alpha then falls monotonically through the tiers and turns negative on the growth and aggressive profiles.
 
-**Raw outperformance on the aggressive tier is beta, not skill.** The aggressive book finishes 23 years at +713 percent against +479 percent for the 60/40. Its beta is 1.41 and its alpha is -0.6 percent. A 60/40 simply levered to the same beta finishes higher (USD 9.38m against 8.06m on a 1m stake), with a better Sharpe (0.62 against 0.56) and a smaller drawdown. Comparing against an exposure-matched passive book is the test that separates allocation skill from risk appetite.
+**The aggressive tier's outperformance is explained by its beta.** The aggressive book finishes 23 years at +713 percent against +479 percent for the 60/40. Its beta is 1.41 and its alpha is -0.6 percent. A 60/40 simply levered to the same beta finishes higher (USD 9.38m against 8.06m on a 1m stake), with a better Sharpe (0.62 against 0.56) and a smaller drawdown.
 
-**The overlays are downside insurance, paid for in bull markets.** In seven of the eight crisis windows the best investable method beats the benchmark. Dual momentum holds the 2008 crisis to -2.6 percent against -35.6 percent for the 60/40. In 2022, when equities and bonds fell together, the trend-plus-momentum combination loses 5.0 percent against 21.7 percent, because the momentum filter exits both legs. In the calm calendar blocks the 60/40 wins two of five, and the rest are decided by a few points.
+**The overlays protect in crises and lag in calm markets.** In seven of the eight crisis windows the best investable method beats the benchmark. Dual momentum holds the 2008 crisis to -2.6 percent against -35.6 percent for the 60/40. In 2022, when equities and bonds fell together, the trend-plus-momentum combination loses 5.0 percent against 21.7 percent, because the momentum filter exits both legs. In the calm calendar blocks the 60/40 wins two of five, and the rest are decided by a few points.
 
-**Most of the gain over the 60/40 is diversification, not optimisation.** Equal weight across the 14 sleeves, with no estimation at all, reaches a Sharpe of 0.75. The risk-only methods that ignore expected returns entirely (maximum diversification 0.96, risk parity 0.89, HRP 0.83) sit at the top of the scoreboard, because they inherit no estimation error on the mean. This reproduces the result of DeMiguel, Garlappi and Uppal (2009) on an independent dataset.
+**Most of the gain over the 60/40 comes from the wider universe rather than from the optimiser.** Equal weight across the 14 sleeves, with no estimation at all, reaches a Sharpe of 0.75. The risk-only methods that ignore expected returns entirely (maximum diversification 0.96, risk parity 0.89, HRP 0.83) sit at the top of the scoreboard, because they carry no estimation error on the mean. This is consistent with DeMiguel, Garlappi and Uppal (2009).
 
-**Nothing clears the multiple-testing bar on the four-year book.** With 286 configurations tried and a cross-sectional Sharpe dispersion of 0.20, the luck threshold is a Sharpe of 0.57. The best run scores exactly 0.57 and a deflated Sharpe of 56 percent against the 95 percent required. The 60/40 itself fails the same gate. The penalty is the search, not the portfolio; the fix is more history, which is why the long tests exist.
+**On the four-year ETF universe, no configuration reaches statistical significance.** With 286 configurations tried and a cross-sectional Sharpe dispersion of 0.20, the luck threshold is a Sharpe of 0.57. The best run scores exactly 0.57 and a deflated Sharpe of 56 percent against the 95 percent required. The 60/40 itself fails the same gate. Four years of history is too short to establish significance after 286 trials; the long tests exist for that reason.
 
 ## Method
 
@@ -85,7 +85,7 @@ Every decision uses only returns up to the decision date, on a rolling 756-day w
 
 - **Covariance:** Ledoit-Wolf shrinkage toward a structured target. The sample covariance is ill-conditioned with 14 assets on 756 days; its largest eigenvalues are overstated, its smallest understated, and the optimiser inverts it.
 - **Expected returns:** Bayes-Stein (Jorion) shrinkage of the sample means toward a common grand mean. The standard error of a three-year mean return is roughly 11 percentage points, larger than most of the means themselves. Shrinkage moves the balanced tier's return target from 5.60 to 3.89 percent.
-- **Tail scenarios:** the 756 daily return vectors are the scenarios the CVaR is computed on. Nothing is summarised into a matrix first.
+- **Tail scenarios:** the 756 daily return vectors are the scenarios the CVaR is computed on, with no fitted distribution in between.
 
 ### Optimisers
 
@@ -166,7 +166,7 @@ Long test (AI = QQQ), full history October 2003 to July 2026, house weights.
 | Equal weight | 8.35% | 8.98% | 0.75 | -29.6% | +1.44% |
 | Min variance | 3.87% | 2.91% | 0.73 | -13.2% | +1.35% |
 
-The best Sharpe on the full scoreboard is the maximum over 136 correlated runs; it is the luckiest draw as much as the best method, and the dashboard says so next to the number.
+The best Sharpe on the full scoreboard is the maximum over 136 correlated runs, and the dashboard flags it as such next to the number.
 
 ### Crisis windows, balanced tier, investable menu
 
@@ -181,13 +181,13 @@ The best Sharpe on the full scoreboard is the maximum over 136 correlated runs; 
 | Banking stress 2023 | Max return under CVaR cap | +4.0% | +3.6% | +0.3 pts |
 | Taper tantrum 2013 | Max return under CVaR cap, relaxed caps | -2.0% | -1.3% | -0.7 pts |
 
-The winner changes with the window. No single method wins everywhere, and taking the best after the fact is itself a selection; that is what the deflated Sharpe on the full scoreboard is for.
+The winner changes with the window. Selecting the best method per window after the fact is itself a form of overfitting, which the deflated Sharpe on the full scoreboard accounts for.
 
 ## Experiments
 
 ### What the caps cost
 
-The house method was re-run under six constraint layers, from the full policy down to long-only. Removing every cap lifts the aggressive tier to +2,421 percent over 23 years at a Sharpe of 0.89, and the book ends up holding as much as 93 percent in a single sleeve, with a median of 48 percent. On the four-year ETF universe the same uncapped configuration delivers a Sharpe of 0.32, a -32 percent drawdown and 6.2x annual turnover. The interesting number is not the uncapped performance but the gap between the two: an explicit price for the governance, which can be discussed rather than assumed.
+The house method was re-run under six constraint layers, from the full policy down to long-only. Removing every cap lifts the aggressive tier to +2,421 percent over 23 years at a Sharpe of 0.89, and the book ends up holding as much as 93 percent in a single sleeve, with a median of 48 percent. On the four-year ETF universe the same uncapped configuration delivers a Sharpe of 0.32, a -32 percent drawdown and 6.2x annual turnover. The gap between the capped and uncapped runs is the measured cost of the concentration limits.
 
 ### Input experiments
 
@@ -201,12 +201,12 @@ Each changes one estimator and nothing else, scored on the window every variant 
 | EWMA scenarios | recent days weighted, lambda 0.97 | 0.68 | 3.93x | rejected; about 66 effective days, the tail rests on three observations, crises no better |
 | Yield-anchored mu | cash rate plus shrunk long-run premia | 0.64 | 0.67x | rejected at 10 bps; halved turnover could flip it at real-world costs |
 
-A measured fact behind the whole design: on this data the autocorrelation of daily returns is -0.075, of absolute returns +0.270, of monthly turbulence +0.660. Risk is forecastable; direction is not. In 2022 the three-year window still believed the stock-bond correlation was -0.38 while the realised figure was +0.14, and that is the failure mode of a static 60/40.
+On this data the autocorrelation of daily returns is -0.075, of absolute returns +0.270, of monthly turbulence +0.660: volatility persists, the sign of returns does not. In 2022 the three-year window still estimated the stock-bond correlation at -0.38 while the realised figure was +0.14.
 
 ## Limitations
 
-- The ETF universe spans four years. Four years cannot separate skill from luck after 286 trials, and the deflated Sharpe says so.
-- The long tests use proxies. The substitution is checked, not assumed, but index mutual funds are not the ETFs a book would hold.
+- The ETF universe spans four years, which is not enough to establish significance after 286 trials.
+- The long tests use index mutual funds as proxies. The substitution is tested above, but they are not the ETFs a portfolio would hold.
 - Costs are a flat 10 bps per unit traded. That is optimistic for the least liquid sleeves.
 - Overlays act after the solver, so they can move a weight past a policy cap; the regime breaker pushes gold above its 5 percent ceiling when it fires. A production version would re-project the result into the constraint set, or de-risk with index futures instead of moving physical weights.
 - Concentration is enforced at the sleeve level. Two sleeves holding the same mega-caps are not measured as one exposure.
