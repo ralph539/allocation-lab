@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+
+# rebuilt locally by the data layer and the lab; the store in data/ is the shipped result
+data/parquet/
+data/quality_report.txt
+reports/
+*.csv
+
+.streamlit/secrets.toml
+.DS_Store

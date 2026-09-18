@@ -1,0 +1,16 @@
+# Full stack: data build, optimisation, walk-forward backtests and the report
+# generators. The hosted dashboard needs only requirements.txt.
+#   pip install -r requirements-engine.txt
+numpy
+pandas
+scipy
+scikit-learn
+cvxpy
+matplotlib
+altair
+streamlit
+duckdb
+pyarrow
+yfinance
+requests
+PyYAML

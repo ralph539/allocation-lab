@@ -1,0 +1,8 @@
+# Presentation theme: warm off-white ground, near-black ink, the charts' muted
+# blue as the single accent. Green and red stay reserved for gain and loss.
+[theme]
+base = "light"
+primaryColor = "#2b6cb0"
+backgroundColor = "#fcfcfa"
+secondaryBackgroundColor = "#f2f2ec"
+textColor = "#1b1e23"

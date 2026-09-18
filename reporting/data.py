@@ -1,0 +1,268 @@
+import os
+
+import duckdb
+import pandas as pd
+
+from engine.io import load_config, DB
+
+_BUCKET = None
+REF = "-"
+CCY = os.environ.get("ALLOC_CCY", "USD")
+
+
+def _con():
+    return duckdb.connect(str(DB), read_only=True)
+
+
+def options():
+    con = _con()
+    try:
+        return con.execute("select distinct universe, variant, tier, method "
+                           "from backtest_metrics").df()
+    finally:
+        con.close()
+
+
+def _has_table(con, name: str) -> bool:
+    return bool(con.execute("select count(*) from duckdb_tables() where table_name=?",
+                            [name]).fetchone()[0])
+
+
+def load_lab_run(universe: str, tier: str, method: str) -> dict:
+    """Ledger for a lab universe, which has no weight variants and no stored metrics.
+
+    The robustness lab walks the same engine forward and now keeps the rebalance rows
+    and the sleeve attribution it used to discard, so a long test can show the same
+    holdings, trades and profit split as the funded book.
+    """
+    key = [universe, tier, method]
+    where = "universe=? and tier=? and method=?"
+    con = _con()
+    try:
+        if not _has_table(con, "robustness_rebalance"):
+            raise KeyError(f"no ledger stored for {universe}")
+        rebal = con.execute(f"select date, sleeve, target_w, w_before, w_after, trade_pct, "
+                            f"trade_amount, cost_amount, breached from robustness_rebalance "
+                            f"where {where} order by date, sleeve", key).df()
+        if rebal.empty:
+            raise KeyError(f"no ledger for {universe}/{tier}/{method}")
+        attrib = con.execute(f"select sleeve, pnl, avg_weight, contrib_return from "
+                             f"robustness_attribution where {where} order by pnl desc",
+                             key).df()
+        turn = con.execute(f"select turnover from robustness_metrics where {where} "
+                           f"and period='full'", key).fetchone()
+    finally:
+        con.close()
+    return {"metrics": {"turnover": float(turn[0]) if turn else float("nan")},
+            "value": None, "rebal": rebal, "attrib": attrib}
+
+
+def load_run(universe: str, tier: str, method: str, variant: str = "house") -> dict:
+    key = [universe, variant, tier, method]
+    where = "universe=? and variant=? and tier=? and method=?"
+    con = _con()
+    try:
+        metrics = con.execute(f"select * from backtest_metrics where {where}", key).df()
+        if metrics.empty:          # a lab universe: its ledger lives in the other tables
+            return load_lab_run(universe, tier, method)
+        value = con.execute(f"select date, book_value, daily_ret, drawdown from value_log "
+                            f"where {where} order by date", key).df()
+        rebal = con.execute(f"select date, sleeve, target_w, w_before, w_after, trade_pct, "
+                            f"trade_amount, cost_amount, breached from rebalance_log where {where} "
+                            f"order by date, sleeve", key).df()
+        attrib = con.execute(f"select sleeve, pnl, avg_weight, contrib_return from "
+                             f"attribution where {where} order by pnl desc", key).df()
+    finally:
+        con.close()
+    return {"metrics": metrics.iloc[0], "value": value, "rebal": rebal, "attrib": attrib}
+
+
+def run_label(variant: str, tier: str, method: str) -> str:
+    return method if variant == REF else f"{variant}/{tier}/{method}"
+
+
+def scoreboard() -> pd.DataFrame:
+    con = _con()
+    try:
+        df = con.execute("select * from backtest_metrics").df()
+    finally:
+        con.close()
+    df["run"] = [run_label(v, t, m) for v, t, m in zip(df.variant, df.tier, df.method)]
+    df["gate"] = ["pass" if d >= 0.95 else "FAIL" for d in df.dsr]
+    return df
+
+
+def curves(universe: str) -> pd.DataFrame:
+    # every equity curve for a universe, in the book currency, as columns keyed by run label
+    con = _con()
+    try:
+        df = con.execute("select variant, tier, method, date, equity from backtest_curves "
+                         "where universe=? order by date", [universe]).df()
+    finally:
+        con.close()
+    df["run"] = [run_label(v, t, m) for v, t, m in zip(df.variant, df.tier, df.method)]
+    return df.pivot(index="date", columns="run", values="equity") * 1_000_000.0
+
+
+def _lab_available() -> bool:
+    con = _con()
+    try:
+        con.execute("select 1 from robustness_curves limit 1")
+        return True
+    except Exception:
+        return False
+    finally:
+        con.close()
+
+
+def all_curves() -> pd.DataFrame:
+    """Every equity curve from both stores, in one long frame.
+
+    The live backtest carries the weight variants but only spans the funded book's
+    history. The robustness lab carries the long-history universes on house weights.
+    Both are walk-forward curves, so they slice the same way.
+    """
+    # One UNION ALL straight to Arrow, decoded with strings_to_categorical: the frame
+    # lands at ~36 MB with no ~170 MB string-frame spike on the way, which is what the
+    # hosted container's memory cap requires. The lab rows take the live convention:
+    # tier-free runs (benchmark, risk-structure optimisers) carry no variant either.
+    q = ("select universe, variant, tier, method, date, equity, 'live' as source "
+         "from backtest_curves "
+         "union all "
+         "select universe, case when tier = '-' then '-' else 'house' end as variant, "
+         "tier, method, date, equity, 'lab' as source from robustness_curves")
+    q_live = ("select universe, variant, tier, method, date, equity, 'live' as source "
+              "from backtest_curves")
+    con = _con()
+    try:
+        try:
+            tbl = con.execute(q).fetch_arrow_table()
+        except Exception:                      # a store without the lab tables
+            tbl = con.execute(q_live).fetch_arrow_table()
+    finally:
+        con.close()
+    df = tbl.to_pandas(strings_to_categorical=True)
+    df["date"] = pd.to_datetime(df["date"])
+    return df
+
+
+_LONG_UNIVERSES = ("us_long", "us_long_stocks")
+
+
+def risk_free(universe: str) -> pd.Series:
+    """Daily risk-free return for a universe, so Sharpe is an excess-return Sharpe.
+
+    The ETF universe uses its own money-market sleeve. The long-history lab
+    universes use the 13-week T-bill, which is what robustness.py walked them with.
+    Returns an empty series when nothing is available, and the caller then reports a
+    raw-return Sharpe.
+    """
+    from engine.io import CASH_NAME
+    if universe in _LONG_UNIVERSES:
+        p = DB.parent / "robustness_prices.parquet"
+        if not p.exists():
+            return pd.Series(dtype=float)
+        irx = pd.read_parquet(p)["^IRX"].dropna()
+        return irx / 100.0 / 252.0
+    con = _con()
+    try:
+        df = con.execute("select date, ret from sleeve_returns where sleeve=? order by date",
+                         [CASH_NAME]).df()
+    except Exception:
+        return pd.Series(dtype=float)
+    finally:
+        con.close()
+    if df.empty:
+        return pd.Series(dtype=float)
+    return df.set_index(pd.to_datetime(df["date"]))["ret"]
+
+
+def universe_dates(curves_df: pd.DataFrame, universe: str) -> pd.DatetimeIndex:
+    d = curves_df.loc[curves_df.universe == universe, "date"]
+    return pd.DatetimeIndex(sorted(d.unique()))
+
+
+_REBAL_COLS = {"date": "Date", "sleeve": "Sleeve", "target_w": "Target %", "w_before": "Before %",
+               "w_after": "After %", "trade_pct": "Trade %", "trade_amount": f"Trade {CCY}",
+               "cost_amount": f"Cost {CCY}", "breached": "Traded"}
+
+
+def pretty_sleeve(s: str) -> str:
+    # display name for a sleeve; the config keys are already screen-ready
+    return s
+
+
+def format_rebal(rebal, eps: float = 5e-7) -> pd.DataFrame:
+    # solver residuals (order 1e-10) are not weights: clip them before they reach the screen
+    df = rebal.copy()
+    for c in ["target_w", "w_before", "w_after", "trade_pct"]:
+        df[c] = (df[c] * 100).where(df[c].abs() > eps, 0.0)
+    for c in ["trade_amount", "cost_amount"]:
+        df[c] = df[c].where(df[c].abs() > 0.5, 0.0)
+    df["sleeve"] = df["sleeve"].map(pretty_sleeve)
+    return df.rename(columns=_REBAL_COLS)[list(_REBAL_COLS.values())]
+
+
+def bucket_map() -> dict:
+    global _BUCKET
+    if _BUCKET is None:
+        _BUCKET = {s["name"]: s["bucket"] for s in load_config().sleeves}
+    return _BUCKET
+
+
+# What the long-history lab actually walked forward, by sleeve name. The config holds
+# the funded book's tickers; a long test reaches 2003 on these substitutes instead, so
+# labelling its holdings from the config would name instruments it never held.
+_LONG_PROXY = {
+    "Equity - Europe": "VEURX",
+    "Equity - US": "VTSMX",
+    "Equity - Developed Asia-Pacific / Japan": "VPACX",
+    "Equity - Emerging / Asia": "VEIEX",
+    "Equity - Thematic AI / automation": "QQQ",
+    "Fixed income - Govt / core": "VFITX",
+    "Fixed income - IG credit": "VFICX",
+    "Fixed income - Inflation-linked": "VIPSX",
+    "Fixed income - High yield": "VWEHX",
+    "Fixed income - EM debt": "PREMX",
+    "Gold": "GC=F",
+    "Liquid alternatives / hedge funds": "MERFX",
+    "Real assets / REITs / infrastructure": "VGSIX",
+    "Cash / money market": "^IRX",
+}
+_AI_SLEEVE = "Equity - Thematic AI / automation"
+
+
+def proxy_map(universe: str = None) -> dict:
+    if universe in _LONG_UNIVERSES:
+        m = dict(_LONG_PROXY)
+        if universe == "us_long_stocks":
+            m[_AI_SLEEVE] = "AAPL+MSFT+AMZN"
+        return m
+    return {s["name"]: s["proxy"] for s in load_config().sleeves}
+
+
+def latest_weights(rebal):
+    last = rebal[rebal["date"] == rebal["date"].max()]
+    return last.set_index("sleeve")["w_after"]
+
+
+def holdings(rebal, universe: str = None, eps: float = 5e-5) -> pd.DataFrame:
+    # the actual book on the last rebalance: one row per held sleeve, biggest first
+    w = latest_weights(rebal)
+    bkt, prx = bucket_map(), proxy_map(universe)
+    df = pd.DataFrame({
+        "Sleeve": [pretty_sleeve(s) for s in w.index],
+        "Bucket": [bkt.get(s, "") for s in w.index],
+        "Instrument": [prx.get(s, "") for s in w.index],
+        "Weight %": (w.values * 100),
+    })
+    df = df[df["Weight %"] > eps * 100].sort_values("Weight %", ascending=False)
+    return df.reset_index(drop=True)
+
+
+def fmt_money(x: float) -> str:
+    return f"{CCY} {x:,.0f}"
+
+
+def fmt_pct(x: float) -> str:
+    return f"{x * 100:.1f}%"
